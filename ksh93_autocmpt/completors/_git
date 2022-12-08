@@ -1,0 +1,15 @@
+#!/bin/ksh93 -e
+
+(( $# != 2 )) && exit 0
+STUB="${2}"
+candidates=(clone status log push pull init add mv restore rm bisect \
+            diff grep log show status branch commit merge rebase reset \
+            switch tag help remote)
+typeset -a result
+typeset -i j=0
+for x in ${candidates[*]}; do
+    [[ "$x" = "$STUB"* ]] && result[$((j++))]="$x"
+done
+
+IFS=$'\a'
+print -r -n - "${result[*]}"
