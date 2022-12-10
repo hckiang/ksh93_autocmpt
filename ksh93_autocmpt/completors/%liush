@@ -1,0 +1,4 @@
+function _AUTOCMPT_DO {
+    [[ ! $# -eq 2 ]] && return;
+    liush list | cut -f1 -d: | tr $'\n' $'\a'
+}

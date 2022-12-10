@@ -5,27 +5,13 @@
 ##
 ##
 ##
-##                         KSH93 AUTOCOMP.
+##                         KSH93 AUTOCMPT.
 ##
 ##
 ##
 ##   Put the folder "ksh93_autocmpt" into ~/.local/share/
 ##   then source this script in ~/.kshrc.
 ##
-##   Command completion doesn't work yet but it can complete file names
-##   and stuff like git {clone,push,pull} etc.
-##
-##   Security Warning: this file contains sorcery that may not be safe
-##   if your yet-to-be-completed input contains $() or ``. It's still
-##   probably much safer than zsh's default behaviour but looser than
-##   bash's.
-##
-##   If your input buffer contains weird commands that 1) does not use
-##   anything in $PATH, 2) when evaluated in a restricted sub-shell
-##   manage to find a way to change the state of the parent shell or the
-##   OS's state, then a <TAB> key will cause the side effect. Furthermore
-##   if this weird command is also non-idempotent then the behaviour is
-##   undefined.
 ##
 ##
 ##
@@ -53,19 +39,25 @@
 ## SOFTWARE.
 ##
 ## ---------------------------------------------------------------------
-ORIG_PS1="`typeset -f PS1`"
+typeset -a g_result
+typeset -a g_splitted
+typeset -i g_state=0
+typeset -i g_nline=0
+typeset -a closequotes
+typeset -a g_lextoks
+typeset -i g_ntok
+typeset -a g_tags
+typeset -i g_lextokgood g_curonspace
+typeset oldps1="`typeset -f PS1`"
+typeset oldkeytrap="$(trap -p KEYBD)"
+
 function PS1.get {
     if (( g_state == 1 )); then
         print '\E[2K\c'
         cclear 1
     fi
-    eval "$ORIG_PS1"
+    eval "$oldps1"
 }
-
-typeset -a g_result
-typeset -a g_splitted
-typeset -i g_state=0
-typeset -i g_nline=0
 
 function jaileval {
     ## Should brace expansion, pathname expansion etc. shouldn't be done after
@@ -95,7 +87,6 @@ function jaileval {
     )
 }
 
-typeset -a closequotes
 closequotes[0]='\c';closequotes[1]=\';closequotes[2]='\"'
 function jailevalguess {
     typeset ocmd t
@@ -151,12 +142,8 @@ function wordsplit {  #If the last argument starts with a ' for example then it'
 ## understand parameter expansion etc. because they probably tokenize lexically
 ## into "words". Here I'm being a bit ambitious that the autocompletor should
 ## understand parameter/command/brace expansions etc, hence the complexity.
-typeset -a g_lextoks
-typeset -i g_ntok
-typeset -a g_tags
-typeset -i g_lextokgood g_curonspace
 
-function tokenize_orig {
+function tokenize_lex {
     typeset x="$1" arg1="$1"
     typeset -i oi=0 lenorig="${#x}" ti=0 pt=0
     typeset rslt
@@ -228,19 +215,15 @@ typeset esc_rc="${ tput rc;}"
 typeset esc_civis="${ tput civis;}" 
 typeset esc_cnorm="${ tput cnorm;}"   ## This one doesn't work?
 
-# TODO EXECUTE USERS PS1.get.
 function cshow {
-    # TODO: CHECK IF THIS IS TALLER THAN THE ENTIRE SCREEN! If yes then do some paging(?)
-    # yash uses a custom tput pager; bash just launches more and do no completion at all.
-    # zsh just print the entire thing to the terminal and returns to the prompt.
-    typeset -i i="$(print -r - "${1}"|wc -l)"
+    typeset -i i="$(awk 'length>'${COLUMNS}'{c++} END{print c+NR}' <(print -r - "${1}"))"
     if [[ "$i" -gt "$(($(tput lines)-2))" ]]; then
         print -rn - "${esc_smcup}"
         cclear
         ## This asking isn't that straightforward... You can't override a keytrap here.
         ## So you'll need a new state.
-        ## print 'Display all '"${#_autocmp_g_result[*]} possibilities? (y/n) \c"
-        print -rn - "${1}"|less       # More doesn't catch the Enter key for some reasons...?
+        # print 'Display all '"${#_autocmp_g_result[*]} possibilities? (y/n) \c"
+        print -rn - "${1}" | less  # More doesn't catch the Enter key for some reasons...?
         print -rn - "${esc_rmcup}"
         return
     fi
@@ -270,13 +253,13 @@ function cclear {
     print -rn - "${esc_rc}"
     g_nline=0
     g_state=0
-#    print "cclear called"
 }
 function absroot {
     cd "$(dirname "$1")"
     printf "%s/%s\n" "$(pwd)" "$(basename "$1")"
     cd "$OLDPWD"
 }
+typeset -A g_completortypes=([A]='_-x' [B]='_! -x' [C]='%-x' [D]='%! -x')
 typeset g_completor=''
 function getcandidate {
     typeset -i j=0
@@ -294,18 +277,22 @@ function getcandidate {
     # Check if the cursor is at the command itself. If yes, set the completor to the
     # command completor.
     if (( ${#g_splitted[*]} == 1 )); then
-        found=1
-        #TODO: Make this work. But this should be sourced in a subshell.
+        found=2
         file="${completor_root}/___CMD"
     fi
 
-    # Check if there's a file called _CMD, if so just execute it and
-    # get return into an array line-by-line
     if (( found == 0 )); then
-        [[ ! -d "${completor_root}" ]] && print "WARNING: cannot find autocomplete directory";
-        for file in "${completor_root}"/*; do
-            if [[ "$(basename "$file")" = _"${g_splitted[0]}" && -x "$file" ]]; then
-                found=1;
+        for typ in A B C D; do
+            typeset def="${g_completortypes[$typ]}"
+            typeset prefix="${def:0:1}"
+            typeset cond="${def:1:${#def}}"
+            for file in "${completor_root}"/*; do
+                if test "$(basename "$file")" = "${prefix}${g_splitted[0]}" && test $cond "$file" ]]; then
+                    found=$(('$typ'-'A'+1))
+                    break;
+                fi
+            done
+            if (( found != 0 )); then
                 break
             fi
         done
@@ -323,13 +310,35 @@ function getcandidate {
     if (( found == 0 )); then
         #TODO: I think this should be sourced in a subshell instead... or not?
         file="${completor_root}/___FALLBACK"
+        found=19
     fi
     set -A g_result
     g_completor="$file"
-    "$g_completor" "${g_splitted[@]}" | IFS=$'\a' read -r -d $'\0' -A g_result
+    case "$found" in
+        1*) "$g_completor" "${g_splitted[@]}" | IFS=$'\a' read -r -d $'\0' -A g_result ;;
+        2*)
+            . "$g_completor"
+            _AUTOCMPT_DO "${g_splitted[@]}" | IFS=$'\a' read -r -d $'\0' -A g_result
+            unset -f _AUTOCMPT_DO
+            ;;
+        *)
+            typeset -a cand
+            if (( found == 3 )); then
+                "$g_completor" "${g_splitted[@]}" | IFS=$'\a' read -r -d $'\0' -A cand
+            else
+                . "$g_completor"
+                _AUTOCMPT_DO "${g_splitted[@]}" | IFS=$'\a' read -r -d $'\0' -A cand
+                unset -f _AUTOCMPT_DO
+            fi
+            j=0
+            for x in ${cand[*]}; do
+                [[ "$x" = "${g_splitted[-1]}"* ]] && g_result[$((j++))]="$x"
+            done
+            ;;
+    esac
 
-    # If a specialized completor doesn't say anything then fallback file names
-    if (( found != 0 && (${#g_result[*]} == 0 ||
+    # If a specialized completor doesn't say anything then fallback to file names
+    if (( found < 10 && (${#g_result[*]} == 0 ||
                              (${#g_result[*]} == 1 && ${#g_result[0]} == 0)) )); then
         g_completor="${completor_root}/___FALLBACK"
         "$g_completor" "${g_splitted[@]}" | IFS=$'\a' read -r -d $'\0' -A g_result
@@ -339,24 +348,24 @@ typeset g_view
 function fmtresult {
     ## TODO: Should be more flexible, in particular, there are cases where / shouldn't be
     ## trimmed from viewing...
-    if [[ "$(basename "$g_completor")" = '___FALLBACK' ]]; then
+    if [[ "$(basename "$g_completor")" = '___FALLBACK' && "$1" = 1 ]]; then
         typeset -a V
         typeset q
         typeset -i j
         for ((j=0; j<${#g_result[*]}; ++j)); do
-# We can use base name instead but it's very, very slow for big folders.
-            V[$j]="${ basename "${g_result[$j]}";}"
-#            if [[ "${g_result[$j]}" = */ ]]; then
-#                q="${g_result[$j]:0:$((${#g_result[$j]} - 1))}"
-#                V[$j]="${q%%+(*\/)}/"
-#            else
-#                V[$j]="${g_result[$j]%%+(*\/)}"
-#            fi
-            [[ -d "${g_result[$j]}" ]] && V[$j]="${V[$j]}/"
+            # We can use base name instead but it's very, very slow for big folders.
+            #            V[$j]="${ basename "${g_result[$j]}";}"
+            #            [[ -d "${g_result[$j]}" ]] && V[$j]="${V[$j]}/"
+            if [[ "${g_result[$j]}" = */ ]]; then
+                q="${g_result[$j]:0:$((${#g_result[$j]} - 1))}"
+                V[$j]="${q##+(*\/)}/"
+            else
+                V[$j]="${g_result[$j]##+(*\/)}"
+            fi
         done
-        g_view="$(COLUMNS=$(tput cols) column <(printf "%s\n" "${V[@]}"))"
+        g_view="$(COLUMNS=$COLUMNS column <(printf "%s\n" "${V[@]}"))"
     else
-        g_view="$(COLUMNS=$(tput cols) column <(printf "%s\n" "${g_result[@]}"))"
+        g_view="$(COLUMNS=$COLUMNS column <(printf "%s\n" "${g_result[@]}"))"
     fi
 }
 
@@ -367,12 +376,13 @@ function quoteresult {  ## Guess if user has hanging ', $', or " and adapt to it
     elif [[ -z "$2" ]]; then
         barequoteresult "$1"
 ## The below patterns causes a miserably slow loop that needs to be killed with -9.
+## But this regexp is wrong and useless anyway.
 #    elif [[ "$2" = *(*)*(%(\'\'E\\)|%(\"\"Q\'E\\))\'*([^\']) ]]; then
-    elif [[ "$2" = *([^\"\'])*(%(\'\'E\\)|%(\"\"Q\'E\\))\$\'*([^\']) ]]; then
+    elif [[ "$2" = *([^\"\'])*(%(\'\'E\\)|%(\"\"Q\'E\\))*([^\'])\$\'*([^\']) ]]; then
         open_dollarsinglequoteresult "$1" "$3"
-    elif [[ "$2" = *([^\"\'])*(%(\'\'E\\)|%(\"\"Q\'E\\))\'*([^\']) ]]; then
+    elif [[ "$2" = *([^\"\'])*(%(\'\'E\\)|%(\"\"Q\'E\\))*([^\'])\'*([^\']) ]]; then
         open_singlequoteresult "$1" "$3"
-    elif [[ "$2" = *([^\"\'])*(%(\'\'E\\)|%(\"\"Q\'E\\))\"*([^\"]) ]]; then
+    elif [[ "$2" = *([^\"\'])*(%(\'\'E\\)|%(\"\"Q\'E\\))*([^\"])\"*([^\"]) ]]; then
         open_doublequoteresult "$1" "$3"
     else
         barequoteresult "$1"
@@ -402,7 +412,8 @@ function barequoteresult {
     typeset input19="${input18//\?/\\\?}"
     typeset input20="${input19//\!/\\\!}"
     typeset input21="${input20//\&/\\\&}"
-    g_quoted="$input21"
+    typeset input22="${input21//:/\\\:}"
+    g_quoted="$input22"
 }
 function open_singlequoteresult {
     typeset input0="$1"
@@ -462,9 +473,60 @@ function commonpart {
         fi
     done
 }
-oldkeytrap="$(trap -p KEYBD)"
+
+function globlastterm {
+    ## If the last term has a successful glob then fill g_result with globbed list
+    typeset -i j=0, allsame=1, same=1
+    typeset -a noglobresult
+    typeset OLDIFS="$IFS"
+    set -o noglob
+    set +o braceexpand
+    ## Need to restrict field splitting, otherwise the loop won't glob correctly if
+    ## there were spaces.
+    IFS=$'\0'
+    for x in ${g_splitted[-1]}; do
+#        print ">>$x<<"
+        noglobresult[$((j++))]="$x"
+    done
+    set +o noglob
+    set -o braceexpand
+#    if (( j > 1 )); then
+#        set -A g_result
+#        return 1;
+#    fi
+    j=0
+    set -A g_result
+    for x in ${g_splitted[-1]}; do
+        g_result[$j]="$x"
+#        print ">>$x<<" ">>${noglobresult[$j]}<<" 
+#        print "SAME=" $( ! [[ "$x" = "${noglobresult[$j]}" ]]; print -n - $?; )
+        same=$( [[ ! "$x" = "${noglobresult[$j]}" ]]; print -n - $?; )
+        : $((allsame = allsame * same, ++j))
+    done
+    IFS="$OLDIFS"
+    ## Detect failed glob... If the non-glob and globbed are the same and files don't exist
+    ## then it's a file glob.
+    if (( ${#noglobresult[*]} <= 0 || (${#noglobresult[*]} == ${#g_result[*]} && (allsame == 1)) )); then
+#        print not_globbed $j ${#noglobresult[*]} ${#g_result[*]}  $allsame
+        set -A g_result
+        return 1;
+    else
+#        print globbed $j ${#noglobresult[*]} ${#g_result[*]}  $allsame
+        return 0;
+    fi
+}
+function depattern {
+    typeset str0="$1"
+    typeset str1="${str0//\[/\\\[}"
+    typeset str2="${str1//\]/\\\]}"
+    typeset str3="${str2//\(/\\\(}"
+    typeset str4="${str3//\)/\\\)}"
+    typeset str5="${str4//\*/\\\*}"
+    typeset str6="${str5//\?/\\\?}"
+    print -r -n - "$str6"
+}
 function keytrap {
-    typeset -i completed=0
+    typeset -i completed=0 globexit=0 usedhiddenstar=0 regurgitated=0 showmode=0 trimdir=1 hiddenstar_regurg=0
     if [[ g_state -eq 1 ]]; then
         print -rn - "${esc_civis}"
 #        cclear
@@ -474,21 +536,52 @@ function keytrap {
         cclear
     fi
     if [[ "${.sh.edchar}" = $'\t' ]]; then
-        ## Glob will be expended into multiple elements of the array, when splitting
-        ## which is not fine.
         wordsplit "${.sh.edtext:0:${.sh.edcol}}"
-        tokenize_orig "${.sh.edtext:0:${.sh.edcol}}"
+        tokenize_lex "${.sh.edtext:0:${.sh.edcol}}"
         if (( ${#g_splitted[*]} == 0 || g_lextokgood == 1 )); then
             .sh.edchar=''
+            tput cnorm
+            print "${.sh.edtext:0:${.sh.edcol}}"
             return
         fi
-#       TODO: glob doesn't work.
-#        globlastterm
+        print -rn - "${esc_civis}";
+        globlastterm
+        globexit=$?
+        if (( globexit > 0 )); then           ## Failed glob. Use completors instead.
+            getcandidate
+#            print ${#g_result[*]} ">>${g_result[0]}<<"
+            if (( (${#g_result[*]} == 0 || (${#g_result[*]} == 1 && ${#g_result[0]} == 0)) )); then
+                # If there still aren't candidates, append * to the end and glob again.
+                g_splitted[$((${#g_splitted[*]} - 1))]="${g_splitted[$((${#g_splitted[*]} - 1))]}"'*'
+                g_lextoks[$((${#g_lextoks[*]} - 1))]="${g_lextoks[$((${#g_lextoks[*]} - 1))]}"'*'
+                usedhiddenstar=1
+                globlastterm
+                globexit=$?
+                # If *-appended glob works, regurgitate it to completor.
+                if (( globexit == 0 && ${#g_result[*]} == 1 && ${#g_result[0]} != 0 )); then
+                    ## Regurgitate to completor as usual.
+                    hiddenstar_regurg=1
+                    typeset tmpstr
+                    g_splitted[-1]="${g_result[0]}"
+                    set -A g_result
+                    getcandidate
+                    ## Remove the star trailing star to avoid confusing later sole-completion filling
+                    tmpstr="${g_splitted[$((${#g_splitted[*]} - 1))]}"
+                    g_splitted[$((${#g_splitted[*]} - 1))]="${tmpstr%\*}"
+                    tmpstr="${g_lextoks[$((${#g_lextoks[*]} - 1))]}"
+                    g_lextoks[$((${#g_lextoks[*]} - 1))]="${tmpstr%\*}"
+                fi
+            fi
+        ## TODO: should I check if g_result is empty, and #g_result[*] == 0?
+        elif (( ${#g_result[*]} == 1 )); then ## Successful but single-result glob. Regurgitate.
+            regurgitated=1
+            g_splitted[-1]="${g_result[0]}"
+            set -A g_result
+            getcandidate
+        fi
 
-        print -rn - "${esc_civis}"
-        getcandidate
-        typeset last_splitted="${g_splitted[$((${#g_splitted[*]} - 1))]}"
-        typeset last_lextok="${g_lextoks[$((${#g_lextoks[*]} - 1))]}"
+        typeset last_splitted="${g_splitted[-1]}";
+        typeset last_lextok="${g_lextoks[-1]}";
         ## if the name is longer than 80 chars the it just won't insert everything...
         ## in .sh.edchar. What to do?
         ##
@@ -497,42 +590,81 @@ function keytrap {
         ##       SIZE OF .sh.edchar. ANY OTHER SANE MECHANISMS TO USE OTHER THAN
         ##       .sh.edchar?
         ##
-        ## BUG:  Try pressing TAB at
-        ##
-        ##       ls Calibre\ Library/calibre/News\ today\ \[fre,\ 04\ nov\ 2022\]\ \(154\)/
-        ##
-        ##       Instant failure.
-        if [[ ${#g_result[*]} -eq 1 ]]; then
-            typeset toadd="${g_result[0]}"
-            toadd="${toadd#${last_splitted}}"
-            quoteresult "${toadd}" "${last_lextok}" 0
-            if [[ ! -z "${g_result[0]}" && ! "${g_result[0]}" = */ ]]; then
-                .sh.edchar="${g_quoted} "
-            else
+#        print '\n' $globexit $usedhiddenstar $regurgitated >&2
+#        print '\n' ">>${g_result[0]}<<"
+        if (( globexit != 0 || hiddenstar_regurg == 1 || regurgitated == 1 )); then
+            ## If the result came from an completor...
+            if (( ${#g_result[*]} == 1 )); then  ## Single result.
+                typeset toadd
+                if (( usedhiddenstar == 0 )); then
+                    toadd="${g_result[0]}"
+                    depattern "${last_splitted}" | IFS= read -d $'\0' -r depat
+#                    print - "->${toadd}<-" "->${depat}<-"
+                    toadd="${toadd#${depat}}"
+#                    print $'\n'">>${toadd}<< >>${last_lextok}<< >>${last_splitted}<<"
+                    quoteresult "${toadd}" "${last_lextok}" 0
+                    showmode=0
+                else
+                    ## If we needed hidden star and subsequently regurgitated to file
+                    ## completor and we got a sole result, then the sole-result
+                    ## substitution isn't reliable anymore. Append a star and show
+                    ## user what it has globbed instead.
+                    if [[ "${g_result[0]}" = */ ]]; then
+                        g_quoted=\*/
+                    else
+                        g_quoted=\*
+                    fi
+                    showmode=1
+                fi
+                if [[ ! -z "${g_result[0]}" && ! "${g_result[0]}" = */ ]]; then
+                    .sh.edchar="${g_quoted} "
+                else
+                    .sh.edchar="${g_quoted}"
+                fi
+            elif (( ${#g_result[*]} >= 1 )); then
+                ## Check if we have a "lowest common denominator". If yes, append.
+                commonpart
+                typeset toadd="${g_common}"
+                depattern "${last_splitted}" | IFS= read -d $'\0' -r depat
+                toadd="${toadd#${depat}}"
+                quoteresult "${toadd}" "${last_lextok}" 1
                 .sh.edchar="${g_quoted}"
-            fi
-            completed=2
-        else
-            ## Check if we have a "lowest common denominator". If yes, append. 
-            commonpart
-            typeset toadd="${g_common}"
-            ## BUG: last_splitted is treated as pattern. How to force it to be only string?
-            toadd="${toadd#${last_splitted}}"
-            quoteresult "${toadd}" "${last_lextok}" 1
-            .sh.edchar="${g_quoted}"
-            completed=1
-        fi
-        fmtresult
-        if (( completed <= 1 )); then
-            cclear
-            cshow "${g_view}"
-            if ((completed == 0)) then;
-               .sh.edchar=''
+                showmode=1
             fi
         else
-            :;
-            cclear
+            ## If result is from a glob, don't complete the sole candidate but
+            ## append a slash if there is a single glob that ends with a slash.
+            ## unless it's from a hidden star, in which case the normal procedure
+            ## applies.
+            if (( ${#g_result[*]} == 1 && ${#g_result[0]} != 1 )); then
+                if [[ "${g_result[0]}" = */ && ! "${last_lextok}" = */ ]]; then
+                    .sh.edchar="/"
+                elif [[ -f "${g_result[0]}" ]]; then
+                    .sh.edchar=" "
+                fi
+            fi
+            showmode=1
         fi
+        if (( globexit == 0 || usedhiddenstar == 1 )); then
+            trimdir=0
+        fi
+        case "$showmode" in
+            0) ## No show
+                cclear
+                ;;
+            1) ## Show reshow from fmtresult g_view
+                fmtresult ${trimdir}
+                cclear
+                cshow "${g_view}"
+                if [[ "${.sh.edchar}" = $'\t' ]]; then
+                    .sh.edchar=''
+                fi
+                ;;
+            *)
+                if [[ "${.sh.edchar}" = $'\t' ]]; then
+                    .sh.edchar=''
+                fi
+        esac
         # TODO: How to detect if the line is too long so we can call cclear? Calling PS1
         # should be okay but only if PS1 is idempotent. Plus escape sequences will pollute
         # the count. tput is the best but how to get cursor position from it?
@@ -546,4 +678,5 @@ function keytrap {
     tput cnorm
     eval "${oldkeytrap}"
 }
+
 trap keytrap KEYBD

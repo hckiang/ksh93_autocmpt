@@ -1,5 +1,68 @@
-#!/bin/ksh93
+function _AUTOCMPT_DO {
+    typeset -a results
+    typeset -i j=0
+    typeset STUB="${1}"
+    typeset -a aliastmp
+    ## If it starts with ./, ../, ~, or / then do file completions
+    if [[ "$STUB" = './'* || "$STUB" = '../'* || "$STUB" = '/'* || "$STUB" = '~'/* ]]; then
+        typeset oldifs
+        if [[ "$STUB" = '..' || "$STUB" = *@(/..) ]]; then
+            print -n - "$STUB"/
+            exit 0
+        fi
+        for x in "${STUB}"*; do
+            [[ -d "$x" ]] && x="$x/" || x="$x"
+            results[$((j++))]="$x"
+        done
 
-## Someday I'll write it up... Someday...
-
-exit 0
+        ## Handle failed glob
+        if [[ ${#results[*]} -eq 1 ]]; then
+            if [[ "${results[0]}" = "${STUB}"'*' ]]; then
+                exit 0
+            fi
+        fi
+        oldifs="${IFS}"
+        IFS=$'\a'
+        print -r -n - "${results[*]}"
+        IFS="${oldifs}"
+    else
+        typeset -i goodglob
+        typeset -a unique_results
+        while read -d ':' p; do
+            [[ -z "$p" ]] && continue
+            for x in "${p}/${STUB}"*; do
+                if [[ ( ! ("$x" = "${p}/${STUB}"'*') ) && -x "$x" && -f "$x" ]]; then
+                    goodglob=1
+                else
+                    goodglob=0
+                fi
+                break
+            done
+            if (( goodglob == 1 )); then
+                for x in "${p}/${STUB}"*; do
+                    results[$((j++))]="$x"
+                done
+            fi
+        done <<< "${PATH}:${FPATH}:"
+       for ((j=0; j<${#results[*]}; ++j)); do
+            results[$j]="${results[$j]##+(*\/)}"
+        done
+        ## Get alias
+        alias | while IFS='=' read -r -A aliastmp; do
+            [[ "${aliastmp[0]}" = "${STUB}"* ]] && results[$((j++))]="${aliastmp[0]}"
+        done
+        ## Get built-ins
+        for x in alias autoload bg break builtin cd command compound continue disown echo enum eval exec exit export false fc fg float function getopts hash hist integer jobs kill let nameref print printf pwd read readonly redirect return set shift sleep source stop suspend test times trap true type typeset ulimit unalias unset wait whence; do
+            [[ "${aliastmp[0]}" = "${STUB}"* ]] && results[$((j++))]="${aliastmp[0]}"
+        done
+        oldifs="${IFS}"
+        j=0
+        IFS=$'\n'
+        print -r -n - "${results[*]}" | sort -u | { while IFS='' read -r y; do
+                                                            unique_results[$((j++))]="$y"
+                                                          done;}
+        IFS=$'\a'
+        print -r -n - "${unique_results[*]}"
+        IFS="${oldifs}"
+    fi
+}

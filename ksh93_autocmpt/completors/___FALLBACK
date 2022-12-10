@@ -1,9 +1,11 @@
 #!/bin/ksh93 -e
+
 typeset -a results
 typeset -i j=0
 STUB="${@: -1}"
+
 if [[ "$STUB" = '..' || "$STUB" = *@(/..) ]]; then
-    print -n - $STUB/
+    print -n - "$STUB"/
     exit 0
 fi
 for x in "${STUB}"*; do
@@ -11,7 +13,7 @@ for x in "${STUB}"*; do
     results[$((j++))]="$x"
 done
 
-## Handle failed grub
+## Handle failed glob
 if [[ ${#results[*]} -eq 1 ]]; then
    if [[ "${results[0]}" = "${STUB}"'*' ]]; then
       exit 0
