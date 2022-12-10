@@ -1,0 +1,5 @@
+#!/bin/ksh93 -e
+
+if [[ "$2" == 'CMD' ]]; then
+   print $'BATCH\aCOMPILE\aSHLIB\aINSTALL\aREMOVE\abuild\acheck\aLINK\aRprof\aRdconv\aRd2pdf\aRd2txt\aStangle\aSweave\aRdiff\aconfig\ajavareconf\artags\c'
+fi

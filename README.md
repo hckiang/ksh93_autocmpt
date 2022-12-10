@@ -5,7 +5,7 @@ shell. It uses `tput` to display completion result.
 
 ## Installation
 Put the folder `ksh93_autocmpt` into `~/.local/share/` then source
-`autocmpt.sh` in ~/.kshrc.
+`autocmpt.sh` in `~/.kshrc`.
 
 ## Writing an Extension
 
@@ -16,7 +16,7 @@ example, `THECMD` can be `git` or `ssh`), the program searches in
 pattern `(_|%)THECMD`; this file is called a "completor". A completor
 should print a list of candidates to its standard output.
 
-If a completor is executable, regardless of whether it is prefixed with
+If a completor is executable, regardless of whether it is prefixed by
 `_` or `%`, it will be executed in the following form:
 ```
 <completor> <user_arg0> <user_arg1> <user_arg2> ...
@@ -43,22 +43,24 @@ $ git remote reblah
                ^
              CURSOR
 ```
-and there is an non-executable file called `_git` then the completor wlll be called as
+and there is an executable file called `_git` then the completor wlll be called
+as
 ```
 _git git remote re
 ```
 
-A completor should always output a list of candidates that are separated by the ASCII
-character that is represented by ksh's `$'\a'`, in other words, the ASCII charactor
-`0x07`.
+A completor should always output a list of candidates that are separated by the
+ASCII character that is represented by ksh's `$'\a'`, in other words, the ASCII
+charactor `0x07`.
 
-If a completor's file name starts with a `_` must only output candidates that
-is prefixed by the argument that immediately preceeds the user's cursor; while
-completors whose file names start with a `%` is can output any candidates, in
-which candidates that are not prefixed by the argument that immediately preceeds
-the user's cursor will be automatically filtered away before being displayed to
-the user. If the output of a `_`-completor includes a candidate that does not
-satisfy the said condition, the behaviour of the program is undefined.
+If a completor's file name starts with a `_` it must output only candidates that
+are prefixed by the to-be-completed argument that immediately preceeds the
+user's cursor; while completors whose file names start with a `%` can output
+any candidates, in which those that are not prefixed by the argument that
+immediately preceeds the user's cursor will be automatically filtered away
+before being displayed to the user. If the output of a `_`-prefixed completor
+includes a candidate that does not satisfy the said condition, the behaviour of
+the program is undefined.
 
 Continuing the example, if the `git` completor is in a file named `_git` then it
 may output `mote\amove` and if it were in `%git` it may output
@@ -67,15 +69,15 @@ may output `mote\amove` and if it were in `%git` it may output
 ## Security Warning
 
 This program contains sorcery that may not be safe
-if your yet-to-be-completed input contains `$()` or vbackticks. It's still
+if your yet-to-be-completed input contains `$()` or backticks. It's still
 probably much safer than zsh's default behaviour, which allows
 all command substitution, but looser than bash's.
 
-If your input buffer contains weird commands in `$()` or backticks that
-1) does not use anything in $PATH, 2) when evaluated in a restricted
+If your input buffer contains weird commands in `$()` or backticks that 1)
+does not use anything in $PATH, 2) when evaluated in a restricted
 sub-shell (which also implies no redirection allowed)
-manage to find a way to change the state of the parent shell or the
-OS's state, then a <TAB> key will cause "side effect". Furthermore
+manage to find a way to change the state of the parent shell or that
+of the OS's, then a <TAB> key will cause "side effect". Furthermore
 if this weird command is also non-idempotent then the behaviour is
 undefined.
 

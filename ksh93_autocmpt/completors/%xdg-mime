@@ -1,0 +1,4 @@
+function _AUTOCMPT_DO {
+    (( $# != 2 )) && exit 0
+    print $'query\adefault\ainstall\auninstall'
+}

@@ -217,7 +217,7 @@ typeset esc_cnorm="${ tput cnorm;}"   ## This one doesn't work?
 
 function cshow {
     typeset -i i="$(awk 'length>'${COLUMNS}'{c++} END{print c+NR}' <(print -r - "${1}"))"
-    if [[ "$i" -gt "$(($(tput lines)-2))" ]]; then
+    if [[ "$i" -gt "$((LINES-2))" ]]; then
         print -rn - "${esc_smcup}"
         cclear
         ## This asking isn't that straightforward... You can't override a keytrap here.
@@ -541,7 +541,6 @@ function keytrap {
         if (( ${#g_splitted[*]} == 0 || g_lextokgood == 1 )); then
             .sh.edchar=''
             tput cnorm
-            print "${.sh.edtext:0:${.sh.edcol}}"
             return
         fi
         print -rn - "${esc_civis}";
