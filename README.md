@@ -4,8 +4,19 @@ This program provides programmable autocompletion for the ksh93
 shell. It uses `tput` to display completion result.
 
 ## Installation
-Put the folder `ksh93_autocmpt` into `~/.local/share/` then source
-`autocmpt.sh` in `~/.kshrc`.
+
+You can install the program by
+
+```
+make
+make install
+```
+
+then add the following into your `~/.kshrc`:
+
+```
+. ~/.local/share/ksh93_autocmpt/autocmpt.sh
+```
 
 ## Writing an Extension
 
