@@ -9,16 +9,20 @@
 ##
 ##
 ##
-##   Put the folder "ksh93_autocmpt" into ~/.local/share/
-##   then source this script in ~/.kshrc.
+##   Run `make install` as non-root user; then this script will be put
+##   into ~/.local/share/ksh93_autocmpt/autocmpt.sh.
+## 
+##   Then add `. ~/.local/share/ksh93_autocmpt/autocmpt.sh` this script
+##   to your ~/.kshrc.
 ##
+##   Only tested in ksh93u+m. Might have bugs if you use other versions.
 ##
 ##
 ##
 ## ---------------------------------------------------------------------
 ##
 ##
-## Copyright (c) 2022 Hao Chi Kiang
+## Copyright (c) 2022-2023 Hao Chi Kiang
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy
 ## of this software and associated documentation files (the "Software"), to deal
@@ -42,6 +46,36 @@
 
 [[ "${TERM}" == dumb || $- != *i* ]] && return
 
+typeset _autocmpt_escsmcup="${ tput smcup 2>/dev/null ;}"
+typeset _autocmpt_escrmcup="${ tput rmcup 2>/dev/null ;}"
+typeset _autocmpt_escsc="${ tput sc 2>/dev/null ;}"
+typeset _autocmpt_escrc="${ tput rc 2>/dev/null ;}"
+typeset _autocmpt_esccivis="${ tput civis 2>/dev/null ;}"
+##typeset _autocmpt_esccnorm="${ tput cnorm 2>/dev/null ;}"   ## This one doesn't work...
+typeset _autocmpt_esccuu9="${ tput cuu 9 2>/dev/null ;}"
+typeset _autocmpt_escel="${ tput el 2>/dev/null ;}"
+if [[ # -z "${_autocmpt_escsmcup}" || \
+      #-z "${_autocmpt_escrmcup}" || \
+      -z "${_autocmpt_escsc}"    || \
+      -z "${_autocmpt_escrc}"    || \
+      ## Some terminals such as emacs term and Linux's F1-F6 terminals
+      ## doesn't allow hiding and showing cursor. In this case just run
+      ## everything as usual because then printing them will just do
+      ## nothing and the functionality is just cosmetic.
+      #-z "${_autocmpt_esccivis}" || \
+      #-z "${_autocmpt_esccnorm}" || \
+      -z "${_autocmpt_esccuu9}"  || \
+      -z "${_autocmpt_escel}" ]]; then
+    print 'ksh93_autocmpt: terminal not supported.' >&2
+    [[ -z "${_autocmpt_escsmcup}" ]] && print "SMCUP"
+    [[ -z "${_autocmpt_escrmcup}" ]] && print "RMCUP"
+    [[ -z "${_autocmpt_escsc}" ]] && print "SC"
+    [[ -z "${_autocmpt_escrc}" ]] && print "RC"
+    [[ -z "${_autocmpt_esccuu9}" ]] && print "CUU9"
+    [[ -z "${_autocmpt_escel}" ]] && print "EL"
+    return;
+fi
+
 typeset -a _autocmpt_result
 typeset -a _autocmpt_jailevaled
 typeset -i _autocmpt_state=0
@@ -60,25 +94,6 @@ typeset _autocmpt_oldkeytrap="$(trap -p KEYBD)"
 typeset -A _autocmpt_completortypes=([A]='_-x' [B]='_! -x' [C]='%-x' [D]='%! -x')
 typeset _autocmpt_completor=''
 
-typeset _autocmpt_escsmcup="${ tput smcup 2>/dev/null ;}"
-typeset _autocmpt_escrmcup="${ tput rmcup 2>/dev/null ;}"
-typeset _autocmpt_escsc="${ tput sc 2>/dev/null ;}"
-typeset _autocmpt_escrc="${ tput rc 2>/dev/null ;}"
-typeset _autocmpt_esccivis="${ tput civis 2>/dev/null ;}"
-typeset _autocmpt_esccnorm="${ tput cnorm 2>/dev/null ;}"   ## This one doesn't work?
-typeset _autocmpt_esccuu9="${ tput cuu 9 2>/dev/null ;}"
-typeset _autocmpt_escel="${ tput el 2>/dev/null ;}"
-if [[ -z "${_autocmpt_escsmcup}" || \
-      -z "${_autocmpt_escrmcup}" || \
-      -z "${_autocmpt_escsc}"    || \
-      -z "${_autocmpt_escrc}"    || \
-      -z "${_autocmpt_esccivis}" || \
-      -z "${_autocmpt_esccnorm}" || \
-      -z "${_autocmpt_esccuu9}"  || \
-      -z "${_autocmpt_escel}" ]]; then
-   print 'ksh93_autocmpt: terminal not supported.' >&2
-   return;
-fi
 
 [[ -z "$AUTOCMPT_ROOT" ]] && \
     AUTOCMPT_ROOT="$HOME/.local/share/ksh93_autocmpt"
@@ -100,8 +115,8 @@ fi
 
 
 function _autocmpt_jaileval {
-    ## Should brace expansion, pathname expansion etc. shouldn't be done after
-    ## $(pwd) for example, otherwise you're asking for bugs... But here how should
+    ## Brace expansion, pathname expansion etc. shouldn't be done after
+    ## $(pwd), otherwise you're asking for bugs... But here how should
     ## I deal with it? Later on I won't have a chance to check if './*' came from
     ## a $(print "./*") or is it real...
     (
@@ -179,8 +194,8 @@ function _autocmpt_jesplit {  #If the last argument starts with a ' for example 
 ##
 ## It's slow and brute-force, but perhaps the only way to go unless we write our
 ## own tokenizer or extract ksh93's C code... KSH93's built-in autocomplete doesn't
-## understand parameter expansion etc. because they probably tokenize lexically
-## into "words". Here I'm being a bit ambitious that the autocompletor should
+## understand parameter expansion etc because they probably tokenize lexically
+## into "words". Here I'm being a bit ambitious: I want the autocompletor to
 ## understand parameter/command/brace expansions etc, hence the complexity.
 
 function _autocmpt_tokenize_lex {
@@ -249,14 +264,26 @@ function _autocmpt_tokenize_lex {
 
 function _autocmpt_show {
     typeset -i i="$(awk 'length>'${COLUMNS}'{c++} END{print c+NR}' <(print -r - "${1}"))"
+    ## Many lines and terminal has paging facility
     if (( i > LINES-2 )); then
-        print -rn - "${_autocmpt_escsmcup}"
-        _autocmpt_clear
-        ## This asking isn't that straightforward... You can't override a keytrap here.
-        ## So you'll need a new state.
-        # print 'Display all '"${#_autocmp__autocmpt_result[*]} possibilities? (y/n) \c"
-        print -rn - "${1}" | less  # More doesn't catch the Enter key for some reasons...?
-        print -rn - "${_autocmpt_escrmcup}"
+        if [[ ! -z "${_autocmpt_escrmcup}" ]] && [[ ! -z "${_autocmpt_escsmcup}" ]]; then
+            _autocmpt_clear
+	    print -rn - "${_autocmpt_escsc}"  # Emacs' terminal fails to restore cursor position
+            print -rn - "${_autocmpt_escsmcup}"
+            ## This asking isn't that straightforward... You can't override a keytrap here.
+            ## So you'll need a new state.
+            # print 'Display all '"${#_autocmp__autocmpt_result[*]} possibilities? (y/n) \c"
+            clear
+            print -rn - "${1}" | less
+            print -rn - "${_autocmpt_escrmcup}"
+            print -rn - "${_autocmpt_escrc}"
+        else  ## Can't use `less' but completion is too long
+            ## IDK what to do...
+            _autocmpt_nline=1
+            printf $'\eD%.0s' 1
+            print -rn - "${_autocmpt_esccuu9/9/${_autocmpt_nline}}""${_autocmpt_escsc}"$'\n'"Completion too long...${_autocmpt_escrc}"
+            _autocmpt_state=1
+        fi
         return
     fi
     _autocmpt_nline=$i
@@ -394,8 +421,9 @@ function _autocmpt_quoteresult {  ## Guess if user has hanging ', $', or " and a
         _autocmpt_quoted=''
     elif [[ -z "$2" ]]; then
         _autocmpt_barequoteresult "$1"
-## The below patterns causes a miserably slow loop that needs to be killed with -9.
-## But this regexp is wrong and useless anyway.
+## The below commented-out patterns causes a miserably slow loop that needs to be
+## killed with -9, but this regexp is wrong and useless anyway. So here's a ksh
+## bug that probably nobody cares about...
 #    elif [[ "$2" = *(*)*(%(\'\'E\\)|%(\"\"Q\'E\\))\'*([^\']) ]]; then
     elif [[ "$2" = *([^\"\'])*(%(\'\'E\\)|%(\"\"Q\'E\\))*([^\'])\$\'*([^\']) ]]; then
         _autocmpt_open_dollarsinglequoteresult "$1" "$3"
@@ -521,7 +549,7 @@ function _autocmpt_globlastterm {
         : $((allsame = allsame * same, ++j))
     done
     IFS="$OLDIFS"
-    ## Detect failed glob... If the non-glob and globbed are the same and files don't exist
+    ## Detect failed globs... If the non-glob and globbed are the same and files don't exist
     ## then it's a file glob.
     if (( ${#noglobresult[*]} <= 0 || (${#noglobresult[*]} == ${#_autocmpt_result[*]} && (allsame == 1)) )); then
 #        print not_globbed $j ${#noglobresult[*]} ${#_autocmpt_result[*]}  $allsame
@@ -682,8 +710,8 @@ function _autocmpt_keytrap {
                 fi
         esac
     else                        # Key is not \t
-        # I am assuming the new key is at most two character. Otherwise the math will be
-        # insane because noone knows what ksh or the users' own key trap will do with
+        # I am assuming the new key is at most two-character wide, otherwise the math will
+        # be insane because no one knows what ksh or the users' own key trap will do with
         # the stuff in .sh.char... A more "sterile" approach might be to call the user's
         # oldkeytrap first then calculate the unicode width; but then escape sequences etc
         # will need to be taken care of. I think that's a bit overkill.

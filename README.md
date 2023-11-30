@@ -1,7 +1,20 @@
-# ksh93_autocmpt: Programmable autocompletion for ksh93
+# ksh93_autocmpt: Programmable autocompletion for ksh93u+m
 
-This program provides programmable autocompletion for the ksh93
-shell. It uses `tput` to display completion result.
+This program provides programmable autocompletion for the ksh93u+m
+shell.
+
+It is equipped with some superpower that handles quotes,
+not-so-nice file names, unicode characters, and more complicated stuff
+like `$(pwd)/$ENVVAR/<TAB>` correctly. And it provides a friendlier
+bash-like experience.
+
+Under the hood, it uses a very funny algorithm; it almost feels like
+a 'vulnerability exploit', as how it works is basically 'fuzzing' the
+ksh's REPL pattern expansion. I believe there're no other ways
+one can access ksh93's lexer and REPL except changing thousands of
+lines of its messy source code directly. Warnings have been given,
+clean freaks should avoid looking at the source code. :)
+
 
 ## Installation
 

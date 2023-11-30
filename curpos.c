@@ -25,8 +25,9 @@ int main(void) {
 	FD_SET(STDIN_FILENO, &f);
 	t.tv_sec = 0;
 /* Can't be too small because things can be rather slow especially in
-   for example konsole or gnome-terminal, both of which are very slow. */
-	t.tv_usec = 200000;
+   for example konsole or gnome-terminal or emacs's terminals, all of which are
+   very slow. */
+	t.tv_usec = 400000;
 	i = 0;
 	nloop = 0;
 RETRY:
